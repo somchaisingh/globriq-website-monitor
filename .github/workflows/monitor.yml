@@ -1,0 +1,30 @@
+name: Globriq public monitoring
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        default: check
+        options: [check, fixture-503, fixture-healthy, fixture-monitor-failure, fixture-monitor-recovery]
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: globriq-monitor-state
+  cancel-in-progress: false
+jobs:
+  observe:
+    if: github.repository == 'somchaisingh/globriq-website-monitor' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Confirm, deduplicate and notify transitions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MONITOR_MODE: ${{ inputs.mode || 'check' }}
+        run: python3 monitor.py --mode "$MONITOR_MODE"

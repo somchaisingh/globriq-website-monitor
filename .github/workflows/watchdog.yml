@@ -1,0 +1,24 @@
+name: Globriq monitor heartbeat
+on:
+  schedule:
+    - cron: '47 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: globriq-monitor-state
+  cancel-in-progress: false
+jobs:
+  heartbeat:
+    if: github.repository == 'somchaisingh/globriq-website-monitor' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Detect missing observer and notify its recovery
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 monitor.py --mode watchdog

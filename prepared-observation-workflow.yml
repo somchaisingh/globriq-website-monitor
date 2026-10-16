@@ -1,0 +1,70 @@
+# DRAFT ONLY. Review activation/cost/owner notification receipt before publication.
+# Place in a reviewed .github/workflows path only after authorization.
+name: Public website availability
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+permissions: {}
+concurrency:
+  group: public-website-observation
+  cancel-in-progress: false
+jobs:
+  public-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read-only public boundary checks
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, urllib.request, urllib.error, urllib.parse
+          from html.parser import HTMLParser
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *a, **kw): return None
+          class Contact(HTMLParser):
+              present = False
+              def handle_starttag(self, tag, attrs):
+                  a = dict(attrs)
+                  if tag == 'form' and a.get('data-el') == 'cform' and a.get('action') == '/api/contact' and a.get('method', '').lower() == 'post':
+                      self.present = True
+          opener = urllib.request.build_opener(NoRedirect)
+          checks = [
+              ('https://www.globriq.com/', 200),
+              ('https://www.globriq.com/pricing', 200),
+              ('https://www.globriq.com/api/contact', 405),
+              ('https://globriq.com/', 308),
+              ('https://globriq-website.vercel.app/', 200),
+              ('https://globriq-website-globriq.vercel.app/', 302),
+              ('https://globriq-website-git-main-globriq.vercel.app/', 302),
+          ]
+          failures = []
+          for url, expected in checks:
+              try:
+                  req = urllib.request.Request(url, method='GET', headers={'User-Agent':'Globriq-public-availability/1'})
+                  try: response = opener.open(req, timeout=10)
+                  except urllib.error.HTTPError as e: response = e
+                  with response:
+                      status, headers = response.code, response.headers
+                      if status != expected: failures.append({'url':url,'kind':'status','status':status})
+                      if url.startswith('https://www.globriq.com/') and expected == 200:
+                          csp = headers.get('Content-Security-Policy','')
+                          directives = ["object-src 'none'", "base-uri 'self'", "frame-ancestors 'none'", "form-action 'self'"]
+                          if headers.get('X-Content-Type-Options') != 'nosniff' or headers.get('X-Frame-Options') != 'DENY' or not headers.get('Strict-Transport-Security') or not all(x in csp for x in directives) or not headers.get('Content-Security-Policy-Report-Only'):
+                              failures.append({'url':url,'kind':'security-header'})
+                          if 'noindex' in headers.get('X-Robots-Tag','').lower(): failures.append({'url':url,'kind':'indexing-header'})
+                      if url == 'https://www.globriq.com/':
+                          # Read public markup in memory only; never submit a form.
+                          p = Contact(); p.feed(response.read(5000000).decode('utf-8','replace'))
+                          if not p.present: failures.append({'url':url,'kind':'contact-form-unavailable'})
+                      if url == 'https://globriq.com/' and headers.get('Location') != 'https://www.globriq.com/':
+                          failures.append({'url':url,'kind':'canonical-redirect'})
+                      location = urllib.parse.urlsplit(headers.get('Location',''))
+                      if 'globriq-website-' in url and expected == 302 and (location.scheme, location.netloc, location.path) != ('https','vercel.com','/sso-api'):
+                          failures.append({'url':url,'kind':'protection-boundary'})
+              except Exception as e:
+                  # Do not print exceptions/response bodies/headers or arbitrary upstream data.
+                  failures.append({'url':url,'kind':'unavailable-or-timeout','type':type(e).__name__})
+          print(json.dumps({'readOnly':True,'checks':len(checks),'failures':failures}))
+          raise SystemExit(bool(failures))
+          PY
