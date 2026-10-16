@@ -18,6 +18,8 @@ The hourly watchdog runs at minute **47** and opens a scheduler incident when th
 
 Incident issues and recovery comments mention only the configured owner, `@somchaisingh`. Delivery uses that owner's existing GitHub email notification settings. No email service, paid add-on, SMTP key, personal access token, or production token is installed. The observer/watchdog ephemeral `GITHUB_TOKEN` can read this repository and write its issues only; the monthly keepalive alone can write this monitor repository's contents. Workflows accept no PR or push events and run only from this exact repository's `main` branch.
 
+GitHub may also send an issue-closed email after the recovery comment. Deduplication prevents recurring outage alerts; it does not suppress GitHub's separate closure notice.
+
 Disable all three workflows in Actions, or run:
 
 ```sh
